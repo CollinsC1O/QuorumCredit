@@ -114,7 +114,8 @@ pub struct LoanRecord {
 #[derive(Clone)]
 pub struct VouchRecord {
     pub voucher: Address,
-    pub stake: i128, // in stroops
+    pub stake: i128,          // in stroops
+    pub vouch_timestamp: u64, // ledger timestamp when vouch was created; immutable after set
 }
 
 #[contracttype]
@@ -199,6 +200,7 @@ impl QuorumCreditContract {
         vouches.push_back(VouchRecord {
             voucher: voucher.clone(),
             stake,
+            vouch_timestamp: env.ledger().timestamp(),
         });
         env.storage()
             .persistent()
@@ -1938,5 +1940,90 @@ mod tests {
         assert!(loan.defaulted);
         assert_eq!(loan.slash_timestamp, Some(5_000_000));
         assert_eq!(loan.slash_timestamp.unwrap(), 5_000_000);
+    }
+
+    // ── vouch_timestamp audit tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_vouch_timestamp_set_on_creation() {
+        let env = Env::default();
+        env.ledger().set_timestamp(7_000_000);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+
+        let vouches = client.get_vouches(&borrower).unwrap();
+        assert_eq!(vouches.len(), 1);
+        assert_eq!(vouches.get(0).unwrap().vouch_timestamp, 7_000_000);
+    }
+
+    #[test]
+    fn test_vouch_timestamp_persists_through_storage_round_trip() {
+        let env = Env::default();
+        env.ledger().set_timestamp(8_500_000);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+
+        // Read back twice to confirm storage round-trip stability.
+        let first_read = client.get_vouches(&borrower).unwrap().get(0).unwrap();
+        let second_read = client.get_vouches(&borrower).unwrap().get(0).unwrap();
+        assert_eq!(first_read.vouch_timestamp, 8_500_000);
+        assert_eq!(second_read.vouch_timestamp, 8_500_000);
+    }
+
+    #[test]
+    fn test_vouch_timestamp_unchanged_after_increase_stake() {
+        let env = Env::default();
+        env.ledger().set_timestamp(9_000_000);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+
+        // Advance time then increase stake — timestamp must not change.
+        env.ledger().set_timestamp(9_999_999);
+        client.increase_stake(&voucher, &borrower, &500_000);
+
+        let vouch = client.get_vouches(&borrower).unwrap().get(0).unwrap();
+        assert_eq!(vouch.stake, 1_500_000);
+        assert_eq!(vouch.vouch_timestamp, 9_000_000); // original timestamp preserved
+    }
+
+    #[test]
+    fn test_vouch_timestamp_independent_per_voucher() {
+        let env = Env::default();
+        let (contract_id, token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token_admin = StellarAssetClient::new(&env, &token_addr);
+
+        env.ledger().set_timestamp(1_100_000);
+        client.vouch(&voucher, &borrower, &1_000_000);
+
+        let voucher2 = Address::generate(&env);
+        token_admin.mint(&voucher2, &5_000_000);
+        env.ledger().set_timestamp(1_200_000);
+        client.vouch(&voucher2, &borrower, &1_000_000);
+
+        let vouches = client.get_vouches(&borrower).unwrap();
+        assert_eq!(vouches.get(0).unwrap().vouch_timestamp, 1_100_000);
+        assert_eq!(vouches.get(1).unwrap().vouch_timestamp, 1_200_000);
+    }
+
+    #[test]
+    fn test_vouch_timestamp_present_after_loan_active() {
+        let env = Env::default();
+        env.ledger().set_timestamp(2_200_000);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+
+        // Vouches are still readable while loan is active.
+        let vouch = client.get_vouches(&borrower).unwrap().get(0).unwrap();
+        assert_eq!(vouch.vouch_timestamp, 2_200_000);
     }
 }
