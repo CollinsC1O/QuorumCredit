@@ -614,11 +614,6 @@ mod tests {
         // Set max_loan_to_stake_ratio to 150% (150 * 100 = 15000 basis points)
         QuorumCreditContractClient::new(env, &contract_id)
             .initialize(&admin, &admin, &token_id.address(), &150);
-        QuorumCreditContractClient::new(env, &contract_id).initialize(
-            &admin,
-            &admin,
-            &token_id.address(),
-        );
 
         (contract_id, token_id.address(), admin, borrower, voucher)
     }
@@ -711,18 +706,14 @@ mod tests {
 
         QuorumCreditContractClient::new(&env, &contract_id)
             .initialize(&admin, &admin, &token_id.address(), &150);
-        QuorumCreditContractClient::new(&env, &contract_id).initialize(
-            &admin,
-            &admin,
-            &token_id.address(),
-        );
 
         let client = QuorumCreditContractClient::new(&env, &contract_id);
         // Stake 1_000_000 — contract now holds exactly 1_000_000.
         client.vouch(&voucher, &borrower, &1_000_000);
 
-        // Request 2_000_000 which exceeds the contract's 1_000_000 balance.
-        let result = client.try_request_loan(&borrower, &2_000_000, &1_000_000);
+        // Request 1_500_000: it is within the 150% collateral cap for 1_000_000
+        // of stake, but still exceeds the contract's 1_000_000 balance.
+        let result = client.try_request_loan(&borrower, &1_500_000, &1_000_000);
         assert_eq!(
             result,
             Err(Ok(ContractError::InsufficientFunds)),
@@ -900,7 +891,7 @@ mod tests {
     #[test]
     fn test_pause_blocks_vouch() {
         let env = Env::default();
-        let (contract_id, _token_addr, admin, borrower, voucher) = setup(&env);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         client.pause();
