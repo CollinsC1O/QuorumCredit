@@ -5,7 +5,7 @@ use soroban_sdk::{
 };
 
 pub mod reputation;
-use reputation::ReputationNftContractClient;
+use reputation::ReputationNftExternalClient;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 // ── Constants (defaults only) ─────────────────────────────────────────────────
@@ -13,8 +13,12 @@ use reputation::ReputationNftContractClient;
 const DEFAULT_YIELD_BPS: i128 = 200;
 const DEFAULT_SLASH_BPS: i128 = 5000;
 const _: () = assert!(
-    DEFAULT_SLASH_BPS <= 10_000,
-    "DEFAULT_SLASH_BPS must not exceed 10_000"
+    DEFAULT_YIELD_BPS > 0 && DEFAULT_YIELD_BPS <= 10_000,
+    "DEFAULT_YIELD_BPS must be in range 1..=10_000"
+);
+const _: () = assert!(
+    DEFAULT_SLASH_BPS > 0 && DEFAULT_SLASH_BPS <= 10_000,
+    "DEFAULT_SLASH_BPS must be in range 1..=10_000"
 );
 const DEFAULT_MAX_VOUCHERS: u32 = 100;
 const DEFAULT_MIN_LOAN_AMOUNT: i128 = 100_000;
@@ -365,6 +369,61 @@ impl QuorumCreditContract {
         Ok(())
     }
 
+    /// Reduce stake from an existing vouch before any active loan exists.
+    pub fn decrease_stake(
+        env: Env,
+        voucher: Address,
+        borrower: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        voucher.require_auth();
+        Self::require_not_paused(&env)?;
+
+        assert!(amount > 0, "decrease amount must be greater than zero");
+        assert!(
+            !Self::has_active_loan(&env, &borrower),
+            "loan already active"
+        );
+
+        let mut vouches: Vec<VouchRecord> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Vouches(borrower.clone()))
+            .expect("vouch not found");
+
+        let idx = vouches
+            .iter()
+            .position(|v| v.voucher == voucher)
+            .expect("vouch not found") as u32;
+
+        let mut vouch = vouches.get(idx).unwrap();
+        assert!(
+            amount <= vouch.stake,
+            "decrease amount exceeds staked amount"
+        );
+
+        vouch.stake -= amount;
+        if vouch.stake == 0 {
+            vouches.remove(idx);
+        } else {
+            vouches.set(idx, vouch);
+        }
+
+        if vouches.is_empty() {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Vouches(borrower));
+        } else {
+            env.storage()
+                .persistent()
+                .set(&DataKey::Vouches(borrower), &vouches);
+        }
+
+        Self::token(&env).transfer(&env.current_contract_address(), &voucher, &amount);
+
+        Ok(())
+    }
+
     /// Disburse a microloan if total vouched stake meets the threshold.
     pub fn request_loan(
         env: Env,
@@ -403,16 +462,10 @@ impl QuorumCreditContract {
             "borrower already has an active loan"
         );
         // Prevent overwriting an active loan record.
-        if let Some(existing) = env
-            .storage()
-            .persistent()
-            .get::<DataKey, LoanRecord>(&DataKey::Loan(borrower.clone()))
-        {
-            assert!(
-                existing.repaid || existing.defaulted,
-                "borrower already has an active loan"
-            );
-        }
+        assert!(
+            !Self::has_active_loan(&env, &borrower),
+            "borrower already has an active loan"
+        );
 
         let vouches: Vec<VouchRecord> = env
             .storage()
@@ -609,11 +662,7 @@ impl QuorumCreditContract {
             .instance()
             .get::<DataKey, Address>(&DataKey::ReputationNft)
         {
-            let nft = ReputationNftContractClient::new(&env, &nft_addr);
-            nft.mint(&borrower);
-            for cb in loan.co_borrowers.iter() {
-                nft.mint(&cb);
-            }
+            ReputationNftExternalClient::new(&env, &nft_addr).mint(&borrower);
         }
 
         Ok(())
@@ -670,11 +719,7 @@ impl QuorumCreditContract {
             .instance()
             .get::<DataKey, Address>(&DataKey::ReputationNft)
         {
-            let nft = ReputationNftContractClient::new(&env, &nft_addr);
-            nft.burn(&borrower);
-            for cb in loan.co_borrowers.iter() {
-                nft.burn(&cb);
-            }
+            ReputationNftExternalClient::new(&env, &nft_addr).burn(&borrower);
         }
 
         // Clear vouches after slashing to prevent state pollution.
@@ -836,11 +881,7 @@ impl QuorumCreditContract {
             .instance()
             .get::<DataKey, Address>(&DataKey::ReputationNft)
         {
-            let nft = ReputationNftContractClient::new(&env, &nft_addr);
-            nft.burn(&borrower);
-            for cb in loan.co_borrowers.iter() {
-                nft.burn(&cb);
-            }
+            ReputationNftExternalClient::new(&env, &nft_addr).burn(&borrower);
         }
 
         env.storage()
@@ -997,6 +1038,14 @@ impl QuorumCreditContract {
 
     // ── Admin: Pause / Unpause ────────────────────────────────────────────────
 
+    /// Pause the contract, disabling stake and loan mutations.
+    pub fn pause(env: Env) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
     /// Pause the contract, disabling vouch, request_loan, repay, and slash.
     pub fn pause(env: Env, admin_signers: Vec<Address>) {
         Self::require_admin_approval(&env, &admin_signers);
@@ -1182,7 +1231,7 @@ impl QuorumCreditContract {
             Some(a) => a,
             None => return 0,
         };
-        ReputationNftContractClient::new(&env, &nft_addr).balance(&borrower)
+        ReputationNftExternalClient::new(&env, &nft_addr).balance(&borrower)
     }
 
     /// Returns the total staked amount across all vouchers for a given borrower.
@@ -1376,6 +1425,15 @@ impl QuorumCreditContract {
             .instance()
             .get(&DataKey::Config)
             .unwrap_or_else(Config::default)
+    }
+
+    fn has_active_loan(env: &Env, borrower: &Address) -> bool {
+        matches!(
+            env.storage()
+                .persistent()
+                .get::<DataKey, LoanRecord>(&DataKey::Loan(borrower.clone())),
+            Some(loan) if !loan.repaid && !loan.defaulted
+        )
     }
 
     fn token(env: &Env) -> token::Client<'_> {
@@ -1825,6 +1883,51 @@ mod tests {
     }
 
     #[test]
+    fn test_decrease_stake_updates_existing_vouch_and_returns_tokens() {
+        let env = Env::default();
+        let (contract_id, token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token = TokenClient::new(&env, &token_addr);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.decrease_stake(&voucher, &borrower, &400_000);
+
+        let vouches = client.get_vouches(&borrower).unwrap();
+        assert_eq!(vouches.len(), 1);
+        assert_eq!(vouches.get(0).unwrap().stake, 600_000);
+        assert_eq!(token.balance(&voucher), 9_400_000);
+        assert_eq!(client.total_vouched(&borrower), 600_000);
+    }
+
+    #[test]
+    fn test_decrease_stake_to_zero_removes_vouch() {
+        let env = Env::default();
+        let (contract_id, token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token = TokenClient::new(&env, &token_addr);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.decrease_stake(&voucher, &borrower, &1_000_000);
+
+        assert!(client.get_vouches(&borrower).is_none());
+        assert_eq!(client.total_vouched(&borrower), 0);
+        assert_eq!(token.balance(&voucher), 10_000_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "loan already active")]
+    fn test_decrease_stake_rejects_active_loan() {
+        let env = Env::default();
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+
+        client.decrease_stake(&voucher, &borrower, &100_000);
+    }
+
+    #[test]
     #[should_panic(expected = "loan amount must meet minimum threshold")]
     fn test_zero_amount_loan_should_fail() {
         let env = Env::default();
@@ -2050,6 +2153,19 @@ mod tests {
         client.pause(&admin_signers);
 
         let result = client.try_increase_stake(&voucher, &borrower, &500_000);
+        assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_pause_blocks_decrease_stake() {
+        let env = Env::default();
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.pause();
+
+        let result = client.try_decrease_stake(&voucher, &borrower, &500_000);
         assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
     }
 
