@@ -158,7 +158,8 @@ pub fn blacklist(env: Env, admin_signers: Vec<Address>, borrower: Address) {
 
 pub fn set_config(env: Env, admin_signers: Vec<Address>, config: Config) {
     require_admin_approval(&env, &admin_signers);
-    validate_admin_config(&config.admins, config.admin_threshold);
+    validate_admin_config(&env, &config.admins, config.admin_threshold)
+        .expect("invalid admin config");
     assert!(config.yield_bps >= 0, "yield_bps must be non-negative");
     assert!(
         config.slash_bps > 0 && config.slash_bps <= 10_000,

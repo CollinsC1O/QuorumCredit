@@ -2,7 +2,7 @@
 
 ## Always Run Syntax Checks
 
-Before implementing any new functionality or making changes to the codebase, you MUST:
+Before and after implementing any new functionality or making changes to the codebase, you MUST:
 
 1. **Run `cargo check`** to verify syntax and compilation
 2. **Run `cargo clippy`** to catch common mistakes and improve code quality
