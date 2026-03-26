@@ -119,7 +119,20 @@ pub fn require_admin_approval(env: &Env, admin_signers: &Vec<Address>) {
     }
 }
 
-pub fn validate_admin_config(admins: &Vec<Address>, admin_threshold: u32) {
+/// Validates that an address is not a zero address
+pub fn require_valid_address(env: &Env, addr: &Address) -> Result<(), ContractError> {
+    if is_zero_address(env, addr) {
+        Err(ContractError::ZeroAddress)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn validate_admin_config(
+    env: &Env,
+    admins: &Vec<Address>,
+    admin_threshold: u32,
+) -> Result<(), ContractError> {
     assert!(!admins.is_empty(), "at least one admin is required");
     assert!(
         admin_threshold > 0,
@@ -133,9 +146,16 @@ pub fn validate_admin_config(admins: &Vec<Address>, admin_threshold: u32) {
     let admin_count = admins.len();
     for i in 0..admin_count {
         let admin = admins.get(i).unwrap();
+
+        // Validate admin address is not zero
+        require_valid_address(env, &admin)?;
+
+        // Check for duplicates
         for j in 0..i {
             let prior_admin = admins.get(j).unwrap();
             assert!(admin != prior_admin, "duplicate admin");
         }
     }
+
+    Ok(())
 }

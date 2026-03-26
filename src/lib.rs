@@ -241,7 +241,7 @@ fn is_zero_address(env: &Env, addr: &Address) -> bool {
 }
 >>>>>>> main
 
-use helpers::{config, validate_admin_config};
+use helpers::{config, require_valid_address, validate_admin_config};
 use reputation::ReputationNftExternalClient;
 
 #[contract]
@@ -256,14 +256,18 @@ impl QuorumCreditContract {
         admins: Vec<Address>,
         admin_threshold: u32,
         token: Address,
-    ) {
+    ) -> Result<(), ContractError> {
         deployer.require_auth();
 
         if env.storage().instance().has(&DataKey::Config) {
             panic_with_error!(&env, ContractError::AlreadyInitialized);
         }
 
-        validate_admin_config(&admins, admin_threshold);
+        // Validate admin addresses and configuration
+        validate_admin_config(&env, &admins, admin_threshold)?;
+
+        // Validate token address
+        require_valid_address(&env, &token)?;
 
         env.storage().instance().set(&DataKey::Deployer, &deployer);
         env.storage().instance().set(
@@ -286,6 +290,8 @@ impl QuorumCreditContract {
             (symbol_short!("contract"), symbol_short!("init")),
             (deployer.clone(), admins, admin_threshold, token),
         );
+
+        Ok(())
     }
 
     // ── Vouch Functions ───────────────────────────────────────────────────────
@@ -588,5 +594,123 @@ impl QuorumCreditContract {
 
     pub fn get_config(env: Env) -> Config {
         admin::get_config(env)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
+
+    fn create_test_token(env: &Env) -> Address {
+        Address::generate(env)
+    }
+
+    fn create_test_admin(env: &Env) -> Address {
+        Address::generate(env)
+    }
+
+    fn create_zero_account_address(env: &Env) -> Address {
+        Address::from_string(&String::from_str(
+            env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        ))
+    }
+
+    fn create_zero_contract_address(env: &Env) -> Address {
+        Address::from_string(&String::from_str(
+            env,
+            "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+        ))
+    }
+
+    #[test]
+    fn test_initialize_rejects_zero_admin_address() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, QuorumCreditContract);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        let deployer = Address::generate(&env);
+        let zero_admin = create_zero_account_address(&env);
+        let valid_admin = create_test_admin(&env);
+        let admins = Vec::from_array(&env, [zero_admin, valid_admin]);
+        let token = create_test_token(&env);
+
+        let result = client.try_initialize(&deployer, &admins, &1, &token);
+        assert!(result.is_err());
+
+        // Verify the specific error
+        match result.err().unwrap() {
+            Ok(err) => assert_eq!(err, ContractError::ZeroAddress),
+            Err(_) => panic!("Expected ContractError::ZeroAddress"),
+        }
+    }
+
+    #[test]
+    fn test_initialize_rejects_zero_contract_admin_address() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, QuorumCreditContract);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        let deployer = Address::generate(&env);
+        let zero_admin = create_zero_contract_address(&env);
+        let admins = Vec::from_array(&env, [zero_admin]);
+        let token = create_test_token(&env);
+
+        let result = client.try_initialize(&deployer, &admins, &1, &token);
+        assert!(result.is_err());
+
+        // Verify the specific error
+        match result.err().unwrap() {
+            Ok(err) => assert_eq!(err, ContractError::ZeroAddress),
+            Err(_) => panic!("Expected ContractError::ZeroAddress"),
+        }
+    }
+
+    #[test]
+    fn test_initialize_rejects_zero_token_address() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, QuorumCreditContract);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        let deployer = Address::generate(&env);
+        let admin = create_test_admin(&env);
+        let admins = Vec::from_array(&env, [admin]);
+        let zero_token = create_zero_account_address(&env);
+
+        let result = client.try_initialize(&deployer, &admins, &1, &zero_token);
+        assert!(result.is_err());
+
+        // Verify the specific error
+        match result.err().unwrap() {
+            Ok(err) => assert_eq!(err, ContractError::ZeroAddress),
+            Err(_) => panic!("Expected ContractError::ZeroAddress"),
+        }
+    }
+
+    #[test]
+    fn test_initialize_succeeds_with_valid_addresses() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, QuorumCreditContract);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        let deployer = Address::generate(&env);
+        let admin = create_test_admin(&env);
+        let admins = Vec::from_array(&env, [admin]);
+        let token = create_test_token(&env);
+
+        let result = client.try_initialize(&deployer, &admins, &1, &token);
+        assert!(result.is_ok());
+
+        // Verify contract is initialized
+        assert!(client.is_initialized());
     }
 }
