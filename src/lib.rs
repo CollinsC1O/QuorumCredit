@@ -16,6 +16,8 @@ pub mod vouch;
 #[cfg(test)]
 mod governance_test;
 #[cfg(test)]
+mod initialize_test;
+#[cfg(test)]
 mod loan_purpose_test;
 #[cfg(test)]
 mod multi_asset_test;
