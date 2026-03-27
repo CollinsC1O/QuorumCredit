@@ -342,8 +342,7 @@ impl QuorumCreditContract {
                 co_borrowers,
                 amount,
                 amount_repaid: 0,
-                repaid: false,
-                defaulted: false,
+                status: crate::types::LoanStatus::Active,
                 created_at: now,
                 disbursement_timestamp: now,
                 deadline,
@@ -399,7 +398,7 @@ impl QuorumCreditContract {
         }
 
         // Guard: only an active (non-repaid, non-defaulted) loan may be repaid.
-        if loan.defaulted || loan.repaid {
+        if loan.status != crate::types::LoanStatus::Active {
             return Err(ContractError::NoActiveLoan);
         }
 
@@ -457,7 +456,7 @@ impl QuorumCreditContract {
                 );
             }
 
-            loan.repaid = true;
+            loan.status = crate::types::LoanStatus::Repaid;
 
             // Increment successful repayment count for the borrower.
             let count: u32 = env
@@ -506,7 +505,7 @@ impl QuorumCreditContract {
             .expect("no active loan");
 
         // Guard: only an active (non-repaid, non-defaulted) loan may be slashed.
-        if loan.repaid || loan.defaulted {
+        if loan.status != crate::types::LoanStatus::Active {
             panic_with_error!(&env, ContractError::NoActiveLoan);
         }
 
@@ -518,7 +517,7 @@ impl QuorumCreditContract {
             .unwrap_or(Vec::new(&env));
 
         // ── EFFECTS ───────────────────────────────────────────────────────────
-        loan.defaulted = true;
+        loan.status = crate::types::LoanStatus::Defaulted;
         env.storage()
             .persistent()
             .set(&DataKey::Loan(borrower.clone()), &loan);
@@ -574,7 +573,7 @@ impl QuorumCreditContract {
             .expect("no active loan");
 
         // Guard: only an active (non-repaid, non-defaulted) loan may be claimed.
-        if loan.repaid || loan.defaulted {
+        if loan.status != crate::types::LoanStatus::Active {
             panic_with_error!(&env, ContractError::NoActiveLoan);
         }
 
@@ -593,7 +592,7 @@ impl QuorumCreditContract {
         }
 
         let mut loan = loan;
-        loan.defaulted = true;
+        loan.status = crate::types::LoanStatus::Defaulted;
         env.storage()
             .persistent()
             .set(&DataKey::Loan(borrower.clone()), &loan);
@@ -672,7 +671,7 @@ impl QuorumCreditContract {
             .expect("no active loan");
 
         // Guard: only an active (non-repaid, non-defaulted) loan may be auto-slashed.
-        if loan.repaid || loan.defaulted {
+        if loan.status != crate::types::LoanStatus::Active {
             panic_with_error!(&env, ContractError::NoActiveLoan);
         }
         assert!(
@@ -688,7 +687,7 @@ impl QuorumCreditContract {
             .unwrap_or(Vec::new(&env));
 
         // ── EFFECTS ───────────────────────────────────────────────────────────
-        loan.defaulted = true;
+        loan.status = crate::types::LoanStatus::Defaulted;
         env.storage()
             .persistent()
             .set(&DataKey::Loan(borrower.clone()), &loan);
@@ -957,7 +956,7 @@ impl QuorumCreditContract {
             .persistent()
             .get::<DataKey, LoanRecord>(&DataKey::Loan(borrower.clone()))
         {
-            if !loan.repaid && !loan.defaulted {
+            if loan.status == crate::types::LoanStatus::Active {
                 return false;
             }
         }
@@ -1024,8 +1023,8 @@ impl QuorumCreditContract {
             .get::<DataKey, LoanRecord>(&DataKey::Loan(borrower))
         {
             None => LoanStatus::None,
-            Some(loan) if loan.repaid => LoanStatus::Repaid,
-            Some(loan) if loan.defaulted => LoanStatus::Defaulted,
+            Some(loan) if loan.status == LoanStatus::Repaid => LoanStatus::Repaid,
+            Some(loan) if loan.status == LoanStatus::Defaulted => LoanStatus::Defaulted,
             _ => LoanStatus::Active,
         }
     }

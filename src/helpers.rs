@@ -58,7 +58,7 @@ pub fn add_slash_balance(env: &Env, amount: i128) {
 }
 
 pub fn has_active_loan(env: &Env, borrower: &Address) -> bool {
-    matches!(get_active_loan_record(env, borrower), Ok(loan) if !loan.repaid && !loan.defaulted)
+    matches!(get_active_loan_record(env, borrower), Ok(loan) if loan.status == crate::types::LoanStatus::Active)
 }
 
 pub fn next_loan_id(env: &Env) -> u64 {
