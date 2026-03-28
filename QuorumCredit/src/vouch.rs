@@ -1,5 +1,7 @@
 use crate::errors::ContractError;
-use crate::helpers::{has_active_loan, require_allowed_token, require_not_paused, require_positive_amount};
+use crate::helpers::{
+    has_active_loan, require_allowed_token, require_not_paused, require_positive_amount,
+};
 use crate::types::{DataKey, VouchRecord};
 use soroban_sdk::{symbol_short, Address, Env, Vec};
 
@@ -81,6 +83,7 @@ fn do_vouch(
     env.storage()
         .persistent()
         .set(&DataKey::VoucherHistory(voucher.clone()), &history);
+    extend_ttl(env, &DataKey::VoucherHistory(voucher.clone()));
 
     vouches.push_back(VouchRecord {
         voucher: voucher.clone(),
@@ -91,12 +94,14 @@ fn do_vouch(
     env.storage()
         .persistent()
         .set(&DataKey::Vouches(borrower.clone()), &vouches);
+    extend_ttl(env, &DataKey::Vouches(borrower.clone()));
 
     // Record the timestamp of this vouch for rate limiting.
     env.storage().persistent().set(
         &DataKey::LastVouchTimestamp(voucher.clone()),
         &env.ledger().timestamp(),
     );
+    extend_ttl(env, &DataKey::LastVouchTimestamp(voucher.clone()));
 
     env.events().publish(
         (symbol_short!("vouch"), symbol_short!("added")),
@@ -163,7 +168,8 @@ pub fn increase_stake(
 
     env.storage()
         .persistent()
-        .set(&DataKey::Vouches(borrower), &vouches);
+        .set(&DataKey::Vouches(borrower.clone()), &vouches);
+    extend_ttl(&env, &DataKey::Vouches(borrower));
 
     Ok(())
 }
@@ -205,7 +211,9 @@ pub fn decrease_stake(
     if vouches.is_empty() {
         env.storage().persistent().remove(&DataKey::Vouches(borrower));
     } else {
-        env.storage().persistent().set(&DataKey::Vouches(borrower), &vouches);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Vouches(borrower), &vouches);
     }
 
     token_client.transfer(&env.current_contract_address(), &voucher, &amount);
@@ -236,9 +244,13 @@ pub fn withdraw_vouch(env: Env, voucher: Address, borrower: Address) -> Result<(
     vouches.remove(idx);
 
     if vouches.is_empty() {
-        env.storage().persistent().remove(&DataKey::Vouches(borrower.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Vouches(borrower.clone()));
     } else {
-        env.storage().persistent().set(&DataKey::Vouches(borrower.clone()), &vouches);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Vouches(borrower.clone()), &vouches);
     }
 
     let token_client = require_allowed_token(&env, &token_addr)?;
@@ -298,6 +310,7 @@ pub fn transfer_vouch(
     env.storage()
         .persistent()
         .set(&DataKey::Vouches(borrower.clone()), &vouches);
+    extend_ttl(&env, &DataKey::Vouches(borrower.clone()));
 
     // Update voucher histories
     // 1. Remove borrower from 'from' history
@@ -311,6 +324,7 @@ pub fn transfer_vouch(
         env.storage()
             .persistent()
             .set(&DataKey::VoucherHistory(from.clone()), &from_history);
+        extend_ttl(&env, &DataKey::VoucherHistory(from.clone()));
     }
 
     // 2. Add borrower to 'to' history if not already there
@@ -324,6 +338,7 @@ pub fn transfer_vouch(
         env.storage()
             .persistent()
             .set(&DataKey::VoucherHistory(to.clone()), &to_history);
+        extend_ttl(&env, &DataKey::VoucherHistory(to.clone()));
     }
 
     env.events().publish(
