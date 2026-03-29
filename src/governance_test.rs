@@ -238,4 +238,16 @@ mod governance_tests {
             crate::LoanStatus::Defaulted
         );
     }
+
+    /// Issue #372: Admin cannot remove themselves in the same transaction.
+    #[test]
+    fn test_remove_admin_self_removal_rejected() {
+        let s = setup();
+        let admin_to_remove = s.admin.clone();
+        let admins = Vec::from_array(&s.env, [admin_to_remove.clone()]);
+
+        // Attempt to remove self should panic
+        let result = s.client.try_remove_admin(&admins, &admin_to_remove);
+        assert!(result.is_err());
+    }
 }
