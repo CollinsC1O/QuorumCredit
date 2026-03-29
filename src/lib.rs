@@ -44,10 +44,16 @@ mod get_loan_none_test;
 
 // #[cfg(test)]
 #[cfg(test)]
+mod loan_overwrite_protection_test;
+#[cfg(test)]
 mod max_vouchers_per_borrower_test;
 #[cfg(test)]
 mod paused_state_test;
+#[cfg(test)]
+mod repay_nonexistent_loan_test;
 mod slash_multi_voucher_test;
+#[cfg(test)]
+mod voucher_balance_check_test;
 
 pub use errors::ContractError;
 pub use types::*;
@@ -942,23 +948,12 @@ impl QuorumCreditContract {
 
     /// Propose a slash action with a confirmation window (timelock delay).
     ///
-    /// # Arguments
-    /// * `proposer` - Address of the proposer
-    /// * `borrower` - Address of the borrower to slash
-    /// * `delay_secs` - Delay in seconds before execution
+    /// Get the maximum number of vouchers per borrower.
     ///
     /// # Returns
-    /// * `Result<u64, ContractError>` - The proposal ID or error
-    ///
-    /// # Panics
-    /// * If proposer has not vouched for borrower
-    /// * If contract is paused
+    /// * `u32` - The maximum number of vouchers per borrower
     pub fn get_max_vouchers_per_borrower(env: Env) -> u32 {
         admin::get_max_vouchers_per_borrower(env)
-    }
-
-    pub fn get_config(env: Env) -> Config {
-        admin::get_config(env)
     }
 
     /// Issue 109: Propose a slash action with a confirmation window (timelock delay).
@@ -1008,21 +1003,13 @@ impl QuorumCreditContract {
         governance::get_timelock_proposal(env, proposal_id)
     }
 
-    // ── Reputation NFT Tests ──────────────────────────────────────────────────
-
-    // ── Loan Pool Tests ───────────────────────────────────────────────────────
-
-    // ── Voucher Cap Tests ─────────────────────────────────────────────────────
-
-    pub fn set_slash_vote_quorum(env: Env, admin_signers: Vec<Address>, quorum_bps: u32) {
-        helpers::require_admin_approval(&env, &admin_signers);
-        governance::set_slash_vote_quorum(&env, quorum_bps);
-    }
-
-    pub fn get_slash_vote_quorum(env: Env) -> u32 {
-        governance::get_slash_vote_quorum(env)
-    }
-
+    /// Get the slash vote record for a borrower.
+    ///
+    /// # Arguments
+    /// * `borrower` - Address of the borrower
+    ///
+    /// # Returns
+    /// * `Option<SlashVoteRecord>` - The slash vote record if exists, None otherwise
     pub fn get_slash_vote(env: Env, borrower: Address) -> Option<SlashVoteRecord> {
         governance::get_slash_vote(env, borrower)
     }
