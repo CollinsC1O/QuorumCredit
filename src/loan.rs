@@ -304,13 +304,16 @@ pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractE
                 .unwrap_or(DEFAULT_REFERRAL_BONUS_BPS);
             let bonus = loan.amount * bonus_bps as i128 / 10_000;
 
-            // Issue 112: Ensure bonus doesn't use slash funds
+            // Issue 369: Check contract balance before transferring bonus
             if bonus > 0 {
-                loan_token.transfer(&env.current_contract_address(), &referrer, &bonus);
-                env.events().publish(
-                    (symbol_short!("referral"), symbol_short!("bonus")),
-                    (referrer, borrower.clone(), bonus),
-                );
+                let contract_balance = loan_token.balance(&env.current_contract_address());
+                if contract_balance >= bonus {
+                    loan_token.transfer(&env.current_contract_address(), &referrer, &bonus);
+                    env.events().publish(
+                        (symbol_short!("referral"), symbol_short!("bonus")),
+                        (referrer, borrower.clone(), bonus),
+                    );
+                }
             }
         }
 
