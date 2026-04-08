@@ -65,13 +65,6 @@ impl QuorumCreditContract {
             panic_with_error!(&env, ContractError::AlreadyInitialized);
         }
 
-        validate_admin_config(&env, &admins, admin_threshold).expect("invalid admin config");
-        require_valid_token(&env, &token).expect("invalid token");
-        assert!(
-            !env.storage().instance().has(&DataKey::Config),
-            "already initialized"
-        );
-
         validate_admin_config(&env, &admins, admin_threshold)?;
         require_valid_token(&env, &token)?;
 

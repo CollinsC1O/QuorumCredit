@@ -389,7 +389,8 @@ mod tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
 
     fn create_test_token(env: &Env) -> Address {
-        Address::generate(env)
+        let admin = Address::generate(env);
+        env.register_stellar_asset_contract_v2(admin).address()
     }
 
     fn create_test_admin(env: &Env) -> Address {

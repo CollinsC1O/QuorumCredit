@@ -118,9 +118,10 @@ mod security_fixes_tests {
         token.mint(&borrower_a, &500_000);
         token.mint(&borrower_b, &500_000);
         
+        s.env.ledger().with_mut(|li| li.timestamp += 61);
         let purpose = String::from_str(&s.env, "test");
-        s.client.request_loan(&borrower_a, &50_000, &500_000, &purpose, &s.token_id);
-        s.client.request_loan(&borrower_b, &50_000, &500_000, &purpose, &s.token_id);
+        s.client.request_loan(&borrower_a, &100_000, &500_000, &purpose, &s.token_id);
+        s.client.request_loan(&borrower_b, &100_000, &500_000, &purpose, &s.token_id);
         
         let loan_a_before = s.client.get_loan(&borrower_a).unwrap();
         let loan_b_before = s.client.get_loan(&borrower_b).unwrap();
@@ -378,7 +379,8 @@ mod security_fixes_tests {
             
             token.mint(&borrower, &100_000);
             
-            let loan_amount = 50_000 + (i as i128 * 10_000);
+            s.env.ledger().with_mut(|li| li.timestamp += 61);
+            let loan_amount = 100_000 + (i as i128 * 10_000);
             let purpose = String::from_str(&s.env, "loan");
             s.client.request_loan(
                 &borrower,

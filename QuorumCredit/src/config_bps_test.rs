@@ -46,6 +46,7 @@ mod config_bps_tests {
     }
 
     fn do_loan(s: &Setup, borrower: &Address, amount: i128, threshold: i128) {
+        s.env.ledger().with_mut(|li| li.timestamp += 61);
         s.client.request_loan(
             borrower,
             &amount,
@@ -114,7 +115,8 @@ mod config_bps_tests {
         do_loan(&s, &borrower, 100_000, stake);
 
         let admin_signers = Vec::from_array(&s.env, [s.admin.clone()]);
-        s.client.slash(&admin_signers, &borrower);
+        let proposal_id = s.client.propose_slash(&s.admin, &borrower, &0);
+        s.client.execute_slash_proposal(&proposal_id);
 
         // Voucher should receive stake * (1 - 20%) = 800_000.
         let expected_returned = stake * (10_000 - 2_000) / 10_000;
