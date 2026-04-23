@@ -20,6 +20,8 @@ mod config_bps_test;
 #[cfg(test)]
 mod invalid_bps_test;
 #[cfg(test)]
+mod grace_period_test;
+#[cfg(test)]
 mod double_repay_test;
 #[cfg(test)]
 mod duplicate_loan_test;
@@ -278,6 +280,10 @@ impl QuorumCreditContract {
 
     pub fn set_max_loan_to_stake_ratio(env: Env, admin_signers: Vec<Address>, ratio: u32) {
         admin::set_max_loan_to_stake_ratio(env, admin_signers, ratio)
+    }
+
+    pub fn set_grace_period(env: Env, admin_signers: Vec<Address>, period: u64) {
+        admin::set_grace_period(env, admin_signers, period)
     }
 
     pub fn add_allowed_token(env: Env, admin_signers: Vec<Address>, token: Address) {
