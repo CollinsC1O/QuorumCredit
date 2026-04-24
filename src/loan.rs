@@ -430,3 +430,34 @@ pub fn default_count(env: Env, borrower: Address) -> u32 {
         .get(&DataKey::DefaultCount(borrower))
         .unwrap_or(0)
 }
+
+/// Emit `repayment_reminder` events for all active loans whose deadline is within 7 days.
+///
+/// Off-chain systems can listen for these events to notify borrowers.
+pub fn emit_repayment_reminders(env: Env) {
+    const SEVEN_DAYS: u64 = 7 * 24 * 60 * 60;
+    let now = env.ledger().timestamp();
+    let counter: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::LoanCounter)
+        .unwrap_or(0);
+
+    for id in 1..=counter {
+        if let Some(loan) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, crate::types::LoanRecord>(&DataKey::Loan(id))
+        {
+            if loan.status == LoanStatus::Active
+                && loan.deadline > now
+                && loan.deadline - now <= SEVEN_DAYS
+            {
+                env.events().publish(
+                    (symbol_short!("repay"), symbol_short!("reminder")),
+                    (loan.borrower, loan.deadline),
+                );
+            }
+        }
+    }
+}

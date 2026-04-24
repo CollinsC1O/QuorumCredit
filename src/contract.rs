@@ -1007,4 +1007,12 @@ impl QuorumCreditContract {
     pub fn execute_slash_vote(env: Env, borrower: Address) -> Result<(), ContractError> {
         governance::execute_slash_vote(env, borrower)
     }
+
+    /// Emit `repayment_reminder` events for all active loans whose deadline is within 7 days.
+    ///
+    /// Off-chain systems can call this to trigger reminder events for borrowers approaching
+    /// their repayment deadline.
+    pub fn emit_repayment_reminders(env: Env) {
+        loan::emit_repayment_reminders(env)
+    }
 }
