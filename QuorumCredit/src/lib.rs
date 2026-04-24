@@ -44,6 +44,8 @@ mod request_loan_insufficient_stake_test;
 #[cfg(test)]
 mod security_fixes_test;
 #[cfg(test)]
+mod max_loan_amount_test;
+#[cfg(test)]
 mod set_min_loan_amount_test;
 #[cfg(test)]
 mod simple_double_repay_test;

@@ -20,6 +20,8 @@ mod loan_overwrite_protection_test;
 mod loan_purpose_test;
 #[path = "max_vouchers_per_borrower_test.rs"]
 mod max_vouchers_per_borrower_test;
+#[path = "max_loan_amount_test.rs"]
+mod max_loan_amount_test;
 #[path = "min_loan_amount_test.rs"]
 mod min_loan_amount_test;
 #[path = "multi_asset_test.rs"]
