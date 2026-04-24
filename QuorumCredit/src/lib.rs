@@ -48,6 +48,8 @@ mod set_min_loan_amount_test;
 #[cfg(test)]
 mod simple_double_repay_test;
 #[cfg(test)]
+mod vouch_min_stake_test;
+#[cfg(test)]
 mod vouch_zero_stake_test;
 #[cfg(test)]
 mod voucher_whitelist_test;

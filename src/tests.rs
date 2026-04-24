@@ -44,6 +44,8 @@ mod slash_auth_test;
 mod slash_multi_voucher_test;
 #[path = "vouch_cooldown_test.rs"]
 mod vouch_cooldown_test;
+#[path = "vouch_min_stake_test.rs"]
+mod vouch_min_stake_test;
 #[path = "vouch_zero_stake_test.rs"]
 mod vouch_zero_stake_test;
 #[path = "voucher_balance_check_test.rs"]
